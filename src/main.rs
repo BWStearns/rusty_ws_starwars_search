@@ -85,7 +85,10 @@ fn response_handler(payload: Payload, socket: RawClient) {
                 }
             }
         }
-        Payload::Binary(bin_data) => println!("Unexpectedly got bytes: {:#?}", bin_data),
+        Payload::Binary(bin_data) => {
+            println!("Unexpectedly got bytes: {:#?}", bin_data);
+            IS_HANDLING_RESPONSES.swap(false, Ordering::Relaxed);
+        }
     }
 }
 
@@ -106,6 +109,58 @@ fn main() {
             .expect("Failed to emit");
         while IS_HANDLING_RESPONSES.load(Ordering::Relaxed) {
             // wait for the server to respond
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_raw_search_response() {
+        let json = r#"{"films":"A New Hope, The Empire Strikes Back, Return of the Jedi, Revenge of the Sith","name":"Darth Vader","page":1,"resultCount":3}"#;
+        let response: Result<RawSearchResponse, serde_json::Error> =
+            parse_raw_search_response(&json);
+        match response {
+            Ok(RawSearchResponse::Success(response)) => {
+                assert_eq!(response.page, 1);
+                assert_eq!(response.resultCount, 3);
+                assert_eq!(response.name, "Darth Vader");
+                assert_eq!(
+                    response.films,
+                    "A New Hope, The Empire Strikes Back, Return of the Jedi, Revenge of the Sith"
+                );
+            }
+            _ => panic!("Unexpected response: {:#?}", response),
+        }
+    }
+
+    #[test]
+    fn test_parse_raw_search_response_error() {
+        let json = r#"{"error":"No results found","page":-1,"resultCount":-1}"#;
+        let response: Result<RawSearchResponse, serde_json::Error> =
+            parse_raw_search_response(&json);
+        match response {
+            Ok(RawSearchResponse::Error(response)) => {
+                assert_eq!(response.page, -1);
+                assert_eq!(response.resultCount, -1);
+                assert_eq!(response.error, "No results found");
+            }
+            _ => panic!("Unexpected response: {:#?}", response),
+        }
+    }
+
+    #[test]
+    fn test_parse_raw_search_response_invalid() {
+        let json = r#"{"error":"No results found","page":-1,"resultCount":-1"#;
+        let response: Result<RawSearchResponse, serde_json::Error> =
+            parse_raw_search_response(&json);
+        match response {
+            Err(err) => {
+                assert!(err.to_string().contains("EOF while parsing"));
+            }
+            _ => panic!("Unexpected response: {:#?}", response),
         }
     }
 }

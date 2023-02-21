@@ -56,6 +56,11 @@ fn parse_raw_search_response(json: &str) -> Result<RawSearchResponse, serde_json
 // This is to allow us to block while waiting for a response from the server
 static IS_HANDLING_RESPONSES: AtomicBool = AtomicBool::new(false);
 
+fn wrap_up(socket: RawClient) {
+    IS_HANDLING_RESPONSES.swap(false, Ordering::Relaxed);
+    _ = socket.disconnect();
+}
+
 fn response_handler(payload: Payload, socket: RawClient) {
     match payload {
         Payload::String(str_payload) => {
@@ -69,25 +74,22 @@ fn response_handler(payload: Payload, socket: RawClient) {
                         response.page, response.resultCount, response.name, response.films
                     );
                     if response.page >= response.resultCount {
-                        IS_HANDLING_RESPONSES.swap(false, Ordering::Relaxed);
-                        _ = socket.disconnect();
+                        wrap_up(socket);
                     }
                 }
                 Ok(RawSearchResponse::Error(response)) => {
                     println!("{}", response.error);
-                    IS_HANDLING_RESPONSES.swap(false, Ordering::Relaxed);
-                    _ = socket.disconnect();
+                    wrap_up(socket);
                 }
                 Err(err) => {
                     println!("Error parsing response: {:#?}", err);
-                    IS_HANDLING_RESPONSES.swap(false, Ordering::Relaxed);
-                    _ = socket.disconnect();
+                    wrap_up(socket);
                 }
             }
         }
         Payload::Binary(bin_data) => {
             println!("Unexpectedly got bytes: {:#?}", bin_data);
-            IS_HANDLING_RESPONSES.swap(false, Ordering::Relaxed);
+            wrap_up(socket);
         }
     }
 }

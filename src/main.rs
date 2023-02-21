@@ -1,12 +1,13 @@
-
 use rust_socketio::{ClientBuilder, Payload, RawClient};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{io, io::prelude::*};
 
 fn give_prompt() {
-    io::stderr().write_all(("empire search > ").as_bytes()).unwrap();
+    io::stderr()
+        .write_all(("empire search > ").as_bytes())
+        .unwrap();
     io::stderr().flush().unwrap();
 }
 
@@ -59,10 +60,14 @@ fn response_handler(payload: Payload, socket: RawClient) {
     match payload {
         Payload::String(str_payload) => {
             // sample response: {"films":"A New Hope, The Empire Strikes Back, Return of the Jedi, Revenge of the Sith","name":"Darth Vader","page":1,"resultCount":3}
-            let response: Result<RawSearchResponse, serde_json::Error> = parse_raw_search_response(&str_payload);
+            let response: Result<RawSearchResponse, serde_json::Error> =
+                parse_raw_search_response(&str_payload);
             match response {
                 Ok(RawSearchResponse::Success(response)) => {
-                    println!("({}/{}) {} - [{}]", response.page, response.resultCount, response.name, response.films);
+                    println!(
+                        "({}/{}) {} - [{}]",
+                        response.page, response.resultCount, response.name, response.films
+                    );
                     if response.page >= response.resultCount {
                         IS_HANDLING_RESPONSES.swap(false, Ordering::Relaxed);
                         _ = socket.disconnect();
@@ -96,7 +101,9 @@ fn main() {
             .connect()
             .expect("Connection failed");
         let input = get_input();
-        let _result = socket.emit("search", json!({ "query": input })).expect("Failed to emit");
+        let _result = socket
+            .emit("search", json!({ "query": input }))
+            .expect("Failed to emit");
         while IS_HANDLING_RESPONSES.load(Ordering::Relaxed) {
             // wait for the server to respond
         }

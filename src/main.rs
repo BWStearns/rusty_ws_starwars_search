@@ -6,17 +6,14 @@ use std::sync::mpsc::Sender;
 use std::{io, io::prelude::*};
 
 fn give_prompt() {
-    io::stderr()
-        .write_all(("empire search > ").as_bytes())
-        .unwrap();
+    io::stderr().write_all(("empire search > ").as_bytes()).unwrap();
     io::stderr().flush().unwrap();
 }
 
 fn get_input() -> String {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).unwrap();
-    let res = input.trim().to_string();
-    res
+    input.trim().to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -69,7 +66,6 @@ fn response_handler(is_done: Sender<bool>, payload: Payload, _socket: RawClient)
                         response.page, response.resultCount, response.name, response.films
                     );
                     if response.page >= response.resultCount {
-                        println!("No more results");
                         _ = is_done.send(true);
                     }
                 }
@@ -112,6 +108,7 @@ fn main() {
         let _result = socket
             .emit("search", json!({ "query": input }))
             .expect("Failed to emit");
+        // Block on a channel waiting for the handler to signal completion.
         let _is_done = rx.recv();
     }
 }

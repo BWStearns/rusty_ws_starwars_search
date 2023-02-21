@@ -1,7 +1,8 @@
 use rust_socketio::{ClientBuilder, Payload, RawClient};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::sync::mpsc::Sender;
 use std::{io, io::prelude::*};
 
 fn give_prompt() {
@@ -19,6 +20,7 @@ fn get_input() -> String {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(non_snake_case)]
 struct SearchResponse {
     films: String,
     name: String,
@@ -28,6 +30,7 @@ struct SearchResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(non_snake_case)]
 struct SearchError {
     error: String,
     page: i64,
@@ -53,15 +56,7 @@ fn parse_raw_search_response(json: &str) -> Result<RawSearchResponse, serde_json
     }
 }
 
-// This is to allow us to block while waiting for a response from the server
-static IS_HANDLING_RESPONSES: AtomicBool = AtomicBool::new(false);
-
-fn wrap_up(socket: RawClient) {
-    IS_HANDLING_RESPONSES.swap(false, Ordering::Relaxed);
-    _ = socket.disconnect();
-}
-
-fn response_handler(payload: Payload, socket: RawClient) {
+fn response_handler(is_done: Sender<bool>, payload: Payload, _socket: RawClient) {
     match payload {
         Payload::String(str_payload) => {
             // sample response: {"films":"A New Hope, The Empire Strikes Back, Return of the Jedi, Revenge of the Sith","name":"Darth Vader","page":1,"resultCount":3}
@@ -74,23 +69,30 @@ fn response_handler(payload: Payload, socket: RawClient) {
                         response.page, response.resultCount, response.name, response.films
                     );
                     if response.page >= response.resultCount {
-                        wrap_up(socket);
+                        println!("No more results");
+                        _ = is_done.send(true);
                     }
                 }
                 Ok(RawSearchResponse::Error(response)) => {
                     println!("{}", response.error);
-                    wrap_up(socket);
+                    _ = is_done.send(true);
                 }
                 Err(err) => {
                     println!("Error parsing response: {:#?}", err);
-                    wrap_up(socket);
+                    _ = is_done.send(true);
                 }
             }
         }
         Payload::Binary(bin_data) => {
             println!("Unexpectedly got bytes: {:#?}", bin_data);
-            wrap_up(socket);
+            _ = is_done.send(true);
         }
+    }
+}
+
+fn make_response_handler(is_done: Sender<bool>) -> impl Fn(Payload, RawClient) {
+    move |payload: Payload, socket: RawClient| {
+        response_handler(is_done.clone(), payload, socket);
     }
 }
 
@@ -98,10 +100,11 @@ fn main() {
     env_logger::init();
     println!("Press Ctrl+C to exit");
     loop {
-        IS_HANDLING_RESPONSES.swap(true, Ordering::Relaxed);
+        let (is_done, rx) = mpsc::channel();
+        let handler = make_response_handler(is_done);
         give_prompt();
         let socket = ClientBuilder::new("http://localhost:3000")
-            .on("search", response_handler)
+            .on("search", handler)
             .on("error", |err, _| eprintln!("Error: {:#?}", err))
             .connect()
             .expect("Connection failed");
@@ -109,9 +112,7 @@ fn main() {
         let _result = socket
             .emit("search", json!({ "query": input }))
             .expect("Failed to emit");
-        while IS_HANDLING_RESPONSES.load(Ordering::Relaxed) {
-            // wait for the server to respond
-        }
+        let _is_done = rx.recv();
     }
 }
 

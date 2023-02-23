@@ -2,6 +2,8 @@
 
 Setup for mac:
 
+Run the server: `docker run -p 3000:3000 clonardo/socketio-backend`
+
 If you already have cargo installed:
 
 ```
